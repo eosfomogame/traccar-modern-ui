@@ -3,16 +3,17 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { devicesActions, eventsActions, sessionActions } from './store';
 import Toast from './components/ui/Toast';
+import { getServerUrl, apiFetch } from './api';
 
-const LOGOUT_CODE = 4000;
+const LOGOUT_CODE   = 4000;
 const RECONNECT_DELAY = 60_000;
 
 const SocketController = () => {
-  const dispatch    = useDispatch();
-  const navigate    = useNavigate();
+  const dispatch      = useDispatch();
+  const navigate      = useNavigate();
   const authenticated = useSelector((s) => Boolean(s.session.user));
-  const socketRef   = useRef(null);
-  const timerRef    = useRef(null);
+  const socketRef     = useRef(null);
+  const timerRef      = useRef(null);
   const [toasts, setToasts] = useState([]);
 
   const clearTimer = () => {
@@ -30,8 +31,10 @@ const SocketController = () => {
     if (socketRef.current?.readyState !== WebSocket.CLOSED && socketRef.current) {
       socketRef.current.close();
     }
-    const proto  = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const socket = new WebSocket(`${proto}//${window.location.host}/api/socket`);
+    // Build WebSocket URL from the saved server URL
+    const base   = getServerUrl();
+    const wsBase = base.replace(/^http/, 'ws');
+    const socket = new WebSocket(`${wsBase}/api/socket`);
     socketRef.current = socket;
 
     socket.onopen  = () => dispatch(sessionActions.updateSocket(true));
@@ -41,8 +44,8 @@ const SocketController = () => {
       if (e.code === LOGOUT_CODE) return;
       try {
         const [dr, pr] = await Promise.all([
-          fetch('/api/devices'),
-          fetch('/api/positions'),
+          apiFetch('/api/devices'),
+          apiFetch('/api/positions'),
         ]);
         if (dr.status === 401) { navigate('/login'); return; }
         if (dr.ok) dispatch(devicesActions.update(await dr.json()));
@@ -60,7 +63,6 @@ const SocketController = () => {
         data.events.forEach((ev) => {
           if (ev.attributes?.message) addToast(ev.attributes.message);
         });
-        // play alarm if needed
         const hasAlarm = data.events.some((ev) => ev.type === 'alarm');
         if (hasAlarm) {
           try { new Audio('/alarm.mp3').play(); } catch { /* ignore */ }
@@ -72,7 +74,7 @@ const SocketController = () => {
   useEffect(() => {
     if (!authenticated) return;
     (async () => {
-      const r = await fetch('/api/devices');
+      const r = await apiFetch('/api/devices');
       if (r.ok) dispatch(devicesActions.refresh(await r.json()));
     })();
     connect();

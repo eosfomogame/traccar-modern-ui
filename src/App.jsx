@@ -5,6 +5,7 @@ import { sessionActions } from './store';
 import SocketController from './SocketController';
 import Loader from './components/ui/Loader';
 import BottomNav from './components/BottomNav';
+import { apiFetch } from './api';
 
 const App = () => {
   const dispatch   = useDispatch();
@@ -17,9 +18,13 @@ const App = () => {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch('/api/session');
-        if (r.ok) {
-          dispatch(sessionActions.updateUser(await r.json()));
+        const [sr, ur] = await Promise.all([
+          apiFetch('/api/server'),
+          apiFetch('/api/session'),
+        ]);
+        if (sr.ok) dispatch(sessionActions.updateServer(await sr.json()));
+        if (ur.ok) {
+          dispatch(sessionActions.updateUser(await ur.json()));
         } else {
           window.sessionStorage.setItem('postLogin', pathname + search);
           navigate(newServer ? '/register' : '/login', { replace: true });
