@@ -1,71 +1,106 @@
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { X, MapPin, Gauge, Navigation, Zap, Battery, Clock, Wifi } from 'lucide-react';
+import { X, MapPin, Gauge, Navigation, Zap, Battery, Clock, ExternalLink, Map, RotateCcw } from 'lucide-react';
 
-const CATEGORY_EMOJI = { car: '🚗', van: '🚐', truck: '🚛', motorcycle: '🏍️', default: '📍' };
-const STATUS_CONFIG = {
-  online:  { label: 'Online',  color: 'text-online',  bg: 'bg-online/10'  },
-  moving:  { label: 'Moving',  color: 'text-moving',  bg: 'bg-moving/10'  },
-  stopped: { label: 'Stopped', color: 'text-stopped', bg: 'bg-stopped/10' },
-  offline: { label: 'Offline', color: 'text-offline', bg: 'bg-offline/10' },
+const STATUS = {
+  online:  { label: 'Online',  cls: 'text-online  bg-online/10'  },
+  moving:  { label: 'Moving',  cls: 'text-moving  bg-moving/10'  },
+  stopped: { label: 'Stopped', cls: 'text-stopped bg-stopped/10' },
+  offline: { label: 'Offline', cls: 'text-offline bg-offline/10' },
+  unknown: { label: 'Unknown', cls: 'text-offline bg-offline/10' },
 };
+const EMOJI = { car:'🚗', van:'🚐', truck:'🚛', motorcycle:'🏍️', boat:'⛵', default:'📍' };
 
-export default function StatusCard({ deviceId, onClose, sidebarOpen }) {
-  const device   = useSelector((s) => s.devices.items.find((d) => d.id === deviceId));
-  const position = useSelector((s) => s.devices.positions[deviceId]);
+export default function StatusCard({ deviceId, position, sidebarOpen, onClose }) {
+  const navigate = useNavigate();
+  const device   = useSelector((s) => s.devices.items[deviceId]);
+  const [tab, setTab] = useState('info');
 
   if (!device) return null;
-  const cfg   = STATUS_CONFIG[device.status] || STATUS_CONFIG.offline;
-  const emoji = CATEGORY_EMOJI[device.category] || CATEGORY_EMOJI.default;
-
+  const cfg   = STATUS[device.status] || STATUS.unknown;
+  const emoji = EMOJI[device.category] || EMOJI.default;
   const attrs = position?.attributes || {};
+
+  const left = sidebarOpen ? 356 : 16;
 
   return (
     <div
-      className="absolute bottom-6 z-30 glass rounded-2xl shadow-card animate-slide-up w-80"
-      style={{ left: sidebarOpen ? '360px' : '16px', transition: 'left 0.3s ease-out', marginLeft: '16px' }}
+      className="absolute bottom-16 z-30 glass rounded-2xl shadow-card animate-slide-up"
+      style={{ left, width: 300, transition: 'left 0.3s ease-out', margin: '0 16px' }}
     >
       {/* Header */}
-      <div className="p-4 pb-3 border-b border-white/5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">{emoji}</span>
-            <div>
-              <div className="font-semibold text-white text-sm">{device.name}</div>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>
-                {cfg.label}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-surface-400 hover:text-white hover:bg-surface-700 transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      <div className="p-3.5 border-b border-white/5 flex items-center gap-3">
+        <span className="text-xl">{emoji}</span>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-white text-sm truncate">{device.name}</div>
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
         </div>
+        <button onClick={onClose}
+          className="w-6 h-6 rounded-lg flex items-center justify-center text-surface-500 hover:text-white hover:bg-surface-700 transition-all flex-shrink-0">
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* Metrics grid */}
-      {position && (
-        <div className="p-4 grid grid-cols-2 gap-2">
-          <Metric icon={Gauge}     label="Speed"   value={`${Math.round(position.speed || 0)} km/h`} />
-          <Metric icon={Navigation} label="Course" value={`${position.course || 0}°`} />
-          <Metric icon={MapPin}    label="Lat"     value={position.lat?.toFixed(5)} />
-          <Metric icon={MapPin}    label="Lng"     value={position.lng?.toFixed(5)} />
+      {/* Tabs */}
+      <div className="flex border-b border-white/5">
+        {['info','attrs'].map((t) => (
+          <button key={t} onClick={() => setTab(t)}
+            className={`flex-1 py-1.5 text-xs capitalize transition-colors ${
+              tab === t ? 'text-brand-400 border-b-2 border-brand-500' : 'text-surface-500 hover:text-white'
+            }`}>{t === 'info' ? 'Position' : 'Attributes'}</button>
+        ))}
+      </div>
+
+      {/* Content */}
+      {tab === 'info' && position ? (
+        <div className="p-3 grid grid-cols-2 gap-1.5">
+          <Metric icon={Gauge}      label="Speed"   value={`${Math.round(position.speed || 0)} km/h`} />
+          <Metric icon={Navigation} label="Course"  value={`${position.course || 0}°`} />
+          <Metric icon={MapPin}     label="Lat"     value={position.latitude?.toFixed(5)} />
+          <Metric icon={MapPin}     label="Lng"     value={position.longitude?.toFixed(5)} />
           {attrs.ignition !== undefined && (
-            <Metric icon={Zap}     label="Ignition" value={attrs.ignition ? 'On' : 'Off'} color={attrs.ignition ? 'text-online' : 'text-surface-500'} />
+            <Metric icon={Zap} label="Ignition" value={attrs.ignition ? 'On' : 'Off'}
+              color={attrs.ignition ? 'text-online' : 'text-surface-500'} />
           )}
           {attrs.batteryLevel !== undefined && (
-            <Metric icon={Battery} label="Battery" value={`${attrs.batteryLevel}%`} color={attrs.batteryLevel > 30 ? 'text-online' : 'text-alarm'} />
+            <Metric icon={Battery} label="Battery" value={`${attrs.batteryLevel}%`}
+              color={attrs.batteryLevel > 30 ? 'text-online' : 'text-alarm'} />
           )}
         </div>
+      ) : tab === 'attrs' ? (
+        <div className="p-3 max-h-40 overflow-y-auto space-y-1">
+          {Object.entries(attrs).length === 0
+            ? <p className="text-xs text-surface-600 text-center py-2">No attributes</p>
+            : Object.entries(attrs).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between text-xs">
+                <span className="text-surface-500 capitalize">{k}</span>
+                <span className="text-white font-mono">{String(v)}</span>
+              </div>
+            ))
+          }
+        </div>
+      ) : (
+        <div className="p-3 text-xs text-surface-500 text-center">No position data</div>
       )}
 
-      {/* Footer */}
-      <div className="px-4 pb-4 flex items-center gap-1.5 text-xs text-surface-500">
-        <Clock className="w-3 h-3" />
-        Last update: {device.lastUpdate ? dayjs(device.lastUpdate).format('HH:mm:ss') : '—'}
+      {/* Footer actions */}
+      <div className="px-3 pb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 text-[10px] text-surface-600">
+          <Clock className="w-3 h-3" />
+          {device.lastUpdate ? dayjs(device.lastUpdate).format('HH:mm:ss') : '—'}
+        </div>
+        <div className="flex gap-1.5">
+          <button onClick={() => navigate(`/replay?deviceId=${deviceId}`)}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-[10px] text-surface-300 transition-colors">
+            <RotateCcw className="w-3 h-3" /> Replay
+          </button>
+          <button onClick={() => window.open(`https://www.google.com/maps?q=${position?.latitude},${position?.longitude}`, '_blank')}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-[10px] text-surface-300 transition-colors">
+            <ExternalLink className="w-3 h-3" /> Maps
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -73,12 +108,12 @@ export default function StatusCard({ deviceId, onClose, sidebarOpen }) {
 
 function Metric({ icon: Icon, label, value, color = 'text-white' }) {
   return (
-    <div className="bg-surface-800/50 rounded-xl px-3 py-2.5">
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className="w-3 h-3 text-surface-500" />
-        <span className="text-[10px] text-surface-500 uppercase tracking-wider">{label}</span>
+    <div className="bg-surface-800/60 rounded-xl px-2.5 py-2">
+      <div className="flex items-center gap-1 mb-0.5">
+        <Icon className="w-3 h-3 text-surface-600" />
+        <span className="text-[9px] text-surface-600 uppercase tracking-wider">{label}</span>
       </div>
-      <div className={`text-sm font-semibold font-mono ${color}`}>{value ?? '—'}</div>
+      <div className={`text-xs font-semibold font-mono ${color}`}>{value ?? '—'}</div>
     </div>
   );
 }
