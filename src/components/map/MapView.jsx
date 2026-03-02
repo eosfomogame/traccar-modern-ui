@@ -1,48 +1,47 @@
 import { useEffect, useRef, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import VehicleMarker from './VehicleMarker';
+import VehicleMarker, { updateMarkerElement } from './VehicleMarker';
 
-// Route path for replay
-const drawReplayPath = (map, positions) => {
-  const id = 'replay-path';
-  if (map.getSource(id)) {
-    map.getSource(id).setData({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: positions.map((p) => [p.longitude, p.latitude]) },
-    });
-    return;
-  }
-  map.addSource(id, {
-    type: 'geojson',
-    data: {
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: positions.map((p) => [p.longitude, p.latitude]) },
+// ── Replay path (GeoJSON line) ─────────────────────────────────────────────
+const SOURCE_ID = 'replay-path';
+
+const upsertReplayPath = (map, positions) => {
+  const geojson = {
+    type: 'Feature',
+    geometry: {
+      type: 'LineString',
+      coordinates: positions.map((p) => [p.longitude, p.latitude]),
     },
-  });
-  map.addLayer({
-    id,
-    type: 'line',
-    source: id,
-    layout: { 'line-join': 'round', 'line-cap': 'round' },
-    paint: { 'line-color': '#3b82f6', 'line-width': 3, 'line-opacity': 0.7 },
-  });
+  };
+  if (map.getSource(SOURCE_ID)) {
+    map.getSource(SOURCE_ID).setData(geojson);
+  } else {
+    map.addSource(SOURCE_ID, { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: SOURCE_ID,
+      type: 'line',
+      source: SOURCE_ID,
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: { 'line-color': '#3b82f6', 'line-width': 3, 'line-opacity': 0.7 },
+    });
+  }
 };
 
+// ── Component ──────────────────────────────────────────────────────────────
 const MapView = ({
   filteredPositions = [],
   selectedPosition,
   selectedDeviceId,
   onDeviceSelect,
   replayPath,
-  replayIndex,
 }) => {
-  const containerRef = useRef(null);
-  const mapRef       = useRef(null);
-  const markersRef   = useRef({});
+  const containerRef  = useRef(null);
+  const mapRef        = useRef(null);
+  const markersRef    = useRef({});   // id → { marker, el }
   const initialFitRef = useRef(false);
 
-  // ── init map
+  // Init map once
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -56,54 +55,56 @@ const MapView = ({
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
     mapRef.current = map;
     return () => {
-      Object.values(markersRef.current).forEach((m) => m.remove());
+      Object.values(markersRef.current).forEach(({ marker }) => marker.remove());
+      markersRef.current = {};
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // ── replay path
+  // Replay path
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !replayPath?.length) return;
-    const ready = () => drawReplayPath(map, replayPath);
-    if (map.isStyleLoaded()) ready();
-    else map.once('load', ready);
+    const run = () => upsertReplayPath(map, replayPath);
+    if (map.isStyleLoaded()) run(); else map.once('load', run);
   }, [replayPath]);
 
-  // ── markers
+  // Markers — update in-place, never re-create unless new device
   const updateMarkers = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const incoming = {};
-    filteredPositions.forEach((pos) => {
-      incoming[pos.deviceId] = pos;
-    });
+    const incoming = Object.fromEntries(
+      filteredPositions.map((p) => [String(p.deviceId), p])
+    );
 
-    // remove stale
+    // Remove stale
     Object.keys(markersRef.current).forEach((id) => {
       if (!incoming[id]) {
-        markersRef.current[id].remove();
+        markersRef.current[id].marker.remove();
         delete markersRef.current[id];
       }
     });
 
-    // add / update
+    // Add or update
     Object.entries(incoming).forEach(([id, pos]) => {
       const isSelected = String(id) === String(selectedDeviceId);
+
       if (markersRef.current[id]) {
-        markersRef.current[id].setLngLat([pos.longitude, pos.latitude]);
-        // update element
-        const el = markersRef.current[id].getElement();
-        el.style.transform = `rotate(${pos.course || 0}deg)`;
-        el.style.outline = isSelected ? '2px solid #3b82f6' : 'none';
+        // ✅ Only move the MapLibre marker — rotation handled on inner div
+        markersRef.current[id].marker.setLngLat([pos.longitude, pos.latitude]);
+        updateMarkerElement(markersRef.current[id].el, pos, isSelected);
       } else {
-        const el = VehicleMarker({ position: pos, isSelected, onClick: () => onDeviceSelect?.(Number(id)) });
+        const el = VehicleMarker({
+          position: pos,
+          isSelected,
+          onClick: () => onDeviceSelect?.(Number(id)),
+        });
         const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
           .setLngLat([pos.longitude, pos.latitude])
           .addTo(map);
-        markersRef.current[id] = marker;
+        markersRef.current[id] = { marker, el };
       }
     });
   }, [filteredPositions, selectedDeviceId, onDeviceSelect]);
@@ -111,34 +112,39 @@ const MapView = ({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.isStyleLoaded()) updateMarkers();
-    else map.once('load', updateMarkers);
+    if (map.isStyleLoaded()) updateMarkers(); else map.once('load', updateMarkers);
   }, [updateMarkers]);
 
-  // ── auto-fit on first load
+  // Auto-fit first load
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || initialFitRef.current || filteredPositions.length === 0) return;
+    if (!map || initialFitRef.current || !filteredPositions.length) return;
     initialFitRef.current = true;
     if (filteredPositions.length === 1) {
       const p = filteredPositions[0];
       map.flyTo({ center: [p.longitude, p.latitude], zoom: 14, duration: 1200 });
     } else {
-      const bounds = filteredPositions.reduce((b, p) => b.extend([p.longitude, p.latitude]), new maplibregl.LngLatBounds([filteredPositions[0].longitude, filteredPositions[0].latitude], [filteredPositions[0].longitude, filteredPositions[0].latitude]));
+      const first = filteredPositions[0];
+      const bounds = filteredPositions.reduce(
+        (b, p) => b.extend([p.longitude, p.latitude]),
+        new maplibregl.LngLatBounds([first.longitude, first.latitude], [first.longitude, first.latitude])
+      );
       map.fitBounds(bounds, { padding: 80, duration: 1200 });
     }
   }, [filteredPositions]);
 
-  // ── fly to selected
+  // Fly to selected
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedPosition) return;
-    map.flyTo({ center: [selectedPosition.longitude, selectedPosition.latitude], zoom: Math.max(map.getZoom(), 14), duration: 800 });
+    map.flyTo({
+      center: [selectedPosition.longitude, selectedPosition.latitude],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 800,
+    });
   }, [selectedPosition]);
 
-  return (
-    <div ref={containerRef} className="absolute inset-0 w-full h-full" />
-  );
+  return <div ref={containerRef} className="absolute inset-0 w-full h-full" />;
 };
 
 export default MapView;

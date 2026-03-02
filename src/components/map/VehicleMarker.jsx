@@ -1,82 +1,102 @@
-// Returns a DOM element for use with MapLibre Marker
+/**
+ * Returns a DOM element for MapLibre Marker.
+ *
+ * IMPORTANT: MapLibre sets its own translate3d on the root element.
+ * We NEVER touch el.style.transform — rotation is applied on an
+ * inner wrapper div so MapLibre positioning stays intact.
+ */
 const VehicleMarker = ({ position, isSelected, onClick }) => {
+  // Root element — MapLibre owns the transform on this node
   const el = document.createElement('div');
-  el.className = 'vehicle-marker';
-  el.style.cssText = `
-    width: 36px;
-    height: 36px;
-    cursor: pointer;
-    position: relative;
-    transform: rotate(${position.course || 0}deg);
-    transition: transform 0.8s ease-out;
-  `;
+  el.style.cssText = 'width:36px;height:36px;cursor:pointer;';
 
-  const speed   = position.speed || 0;
+  // Inner wrapper — we rotate THIS, not el
+  const inner = document.createElement('div');
+  inner.dataset.markerInner = '1';
+  inner.style.cssText = [
+    'width:36px;height:36px;',
+    'position:relative;',
+    `transform:rotate(${position.course || 0}deg);`,
+    'transition:transform 0.6s ease-out;',
+    'will-change:transform;',
+  ].join('');
+
+  const speed    = position.speed || 0;
   const isMoving = speed > 0.5;
-  const status   = position.attributes?.ignition === false ? 'stopped'
-    : isMoving ? 'moving' : 'stopped';
+  const hasAlarm = Boolean(position.attributes?.alarm);
 
-  const colorMap = {
-    moving:  { fill: '#3b82f6', ring: '#3b82f621', glow: '#3b82f640' },
-    stopped: { fill: '#f59e0b', ring: '#f59e0b21', glow: '#f59e0b40' },
-    alarm:   { fill: '#ef4444', ring: '#ef444421', glow: '#ef444440' },
-  };
-  const c = colorMap[status] || colorMap.stopped;
+  const color = hasAlarm ? '#ef4444' : isMoving ? '#3b82f6' : '#f59e0b';
+  const glow  = hasAlarm ? '#ef444440' : isMoving ? '#3b82f640' : '#f59e0b40';
 
-  // Pulse ring (only when moving)
-  if (isMoving || isSelected) {
+  // Pulse ring (selected or alarm)
+  if (isSelected || hasAlarm) {
     const ring = document.createElement('div');
-    ring.style.cssText = `
-      position: absolute;
-      inset: -6px;
-      border-radius: 50%;
-      border: 2px solid ${isSelected ? '#3b82f6' : c.fill};
-      opacity: 0.6;
-      animation: ping 1.5s cubic-bezier(0,0,0.2,1) infinite;
-      pointer-events: none;
-    `;
-    el.appendChild(ring);
+    ring.style.cssText = [
+      'position:absolute;inset:-6px;border-radius:50%;',
+      `border:2px solid ${color};`,
+      'opacity:0.6;pointer-events:none;',
+      'animation:ping 1.5s cubic-bezier(0,0,0.2,1) infinite;',
+    ].join('');
+    inner.appendChild(ring);
   }
 
-  // Main body — arrow shape
-  el.innerHTML += `
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"
-      style="position:absolute;inset:0;filter:${isSelected ? `drop-shadow(0 0 6px ${c.fill})` : 'none'};transition:filter 0.3s;">
-      <!-- Shadow circle -->
-      <circle cx="18" cy="18" r="16" fill="${c.glow}" />
-      <!-- Body circle -->
-      <circle cx="18" cy="18" r="12" fill="${c.fill}" />
-      <!-- Arrow pointing up (direction of travel) -->
-      <path d="M18 9 L23 23 L18 20 L13 23 Z" fill="white" opacity="0.9" />
-    </svg>
+  // SVG arrow body
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '36');
+  svg.setAttribute('height', '36');
+  svg.setAttribute('viewBox', '0 0 36 36');
+  svg.style.cssText = [
+    'position:absolute;inset:0;',
+    `filter:${isSelected ? `drop-shadow(0 0 6px ${color})` : 'none'};`,
+  ].join('');
+
+  svg.innerHTML = `
+    <circle cx="18" cy="18" r="16" fill="${glow}"/>
+    <circle cx="18" cy="18" r="12" fill="${color}"/>
+    <path d="M18 9 L23 23 L18 20 L13 23 Z" fill="white" opacity="0.9"/>
   `;
+  inner.appendChild(svg);
 
-  // Speed label (below marker, not rotated)
+  // Speed badge — counter-rotated so it stays horizontal
   if (isMoving) {
-    const label = document.createElement('div');
-    label.style.cssText = `
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      transform: translateX(-50%) rotate(${-(position.course || 0)}deg);
-      margin-top: 2px;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      font-size: 9px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 4px;
-      white-space: nowrap;
-      pointer-events: none;
-      font-family: monospace;
-    `;
-    label.textContent = `${(speed * 1.852).toFixed(0)} km/h`;
-    el.appendChild(label);
+    const badge = document.createElement('div');
+    badge.dataset.markerBadge = '1';
+    badge.style.cssText = [
+      'position:absolute;top:100%;left:50%;',
+      `transform:translateX(-50%) rotate(${-(position.course || 0)}deg);`,
+      'margin-top:3px;',
+      'background:rgba(0,0,0,0.75);color:#fff;',
+      'font-size:9px;font-weight:600;font-family:monospace;',
+      'padding:1px 5px;border-radius:4px;',
+      'white-space:nowrap;pointer-events:none;',
+    ].join('');
+    badge.textContent = `${(speed * 1.852).toFixed(0)} km/h`;
+    inner.appendChild(badge);
   }
 
+  el.appendChild(inner);
   el.addEventListener('click', (e) => { e.stopPropagation(); onClick?.(); });
-
   return el;
+};
+
+/**
+ * Update an existing marker element in-place (no re-create).
+ * Rotates only the inner wrapper, never the root el.
+ */
+export const updateMarkerElement = (el, position, isSelected) => {
+  const inner = el.querySelector('[data-marker-inner]');
+  if (!inner) return;
+  inner.style.transform = `rotate(${position.course || 0}deg)`;
+
+  const badge = el.querySelector('[data-marker-badge]');
+  if (badge) {
+    badge.style.transform = `translateX(-50%) rotate(${-(position.course || 0)}deg)`;
+  }
+
+  const svg = inner.querySelector('svg');
+  const hasAlarm = Boolean(position.attributes?.alarm);
+  const color = hasAlarm ? '#ef4444' : (position.speed || 0) > 0.5 ? '#3b82f6' : '#f59e0b';
+  if (svg) svg.style.filter = isSelected ? `drop-shadow(0 0 6px ${color})` : 'none';
 };
 
 export default VehicleMarker;
