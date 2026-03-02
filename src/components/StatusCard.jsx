@@ -1,119 +1,94 @@
-import { useState } from 'react';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
+import {
+  X, Navigation, Gauge, MapPin, Clock, Battery,
+  Zap, Thermometer, AlertTriangle, Play
+} from 'lucide-react';
 import dayjs from 'dayjs';
-import { X, MapPin, Gauge, Navigation, Zap, Battery, Clock, ExternalLink, Map, RotateCcw } from 'lucide-react';
 
-const STATUS = {
-  online:  { label: 'Online',  cls: 'text-online  bg-online/10'  },
-  moving:  { label: 'Moving',  cls: 'text-moving  bg-moving/10'  },
-  stopped: { label: 'Stopped', cls: 'text-stopped bg-stopped/10' },
-  offline: { label: 'Offline', cls: 'text-offline bg-offline/10' },
-  unknown: { label: 'Unknown', cls: 'text-offline bg-offline/10' },
-};
-const EMOJI = { car:'🚗', van:'🚐', truck:'🚛', motorcycle:'🏍️', boat:'⛵', default:'📍' };
+const fmt = (iso) => iso ? dayjs(iso).format('HH:mm:ss DD/MM/YY') : '—';
+const fmtSpeed = (knots) => knots != null ? `${(knots * 1.852).toFixed(0)} km/h` : '—';
 
-export default function StatusCard({ deviceId, position, sidebarOpen, onClose }) {
+const Row = ({ icon: Icon, label, value, color = 'text-surface-400' }) => (
+  <div className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+    <div className="flex items-center gap-2 text-surface-500">
+      <Icon className="w-3.5 h-3.5" />
+      <span className="text-xs">{label}</span>
+    </div>
+    <span className={`text-xs font-semibold ${color}`}>{value}</span>
+  </div>
+);
+
+const StatusCard = ({ deviceId, position, onClose, sidebarOpen }) => {
   const navigate = useNavigate();
   const device   = useSelector((s) => s.devices.items[deviceId]);
-  const [tab, setTab] = useState('info');
 
   if (!device) return null;
-  const cfg   = STATUS[device.status] || STATUS.unknown;
-  const emoji = EMOJI[device.category] || EMOJI.default;
-  const attrs = position?.attributes || {};
+
+  const speed    = position?.speed || 0;
+  const isMoving = speed > 0.5;
+  const attrs    = position?.attributes || {};
 
   const left = sidebarOpen ? 356 : 16;
 
   return (
     <div
-      className="absolute bottom-16 z-30 glass rounded-2xl shadow-card animate-slide-up"
-      style={{ left, width: 300, transition: 'left 0.3s ease-out', margin: '0 16px' }}
+      className="absolute bottom-20 z-30 glass rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
+      style={{ left, width: 300, transition: 'left 0.3s ease' }}
     >
       {/* Header */}
-      <div className="p-3.5 border-b border-white/5 flex items-center gap-3">
-        <span className="text-xl">{emoji}</span>
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5">
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-white text-sm truncate">{device.name}</div>
-          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.cls}`}>{cfg.label}</span>
+          <p className="text-sm font-bold text-white truncate">{device.name}</p>
+          <p className="text-[10px] text-surface-400">
+            {isMoving ? `Moving · ${fmtSpeed(speed)}` : 'Stopped'}
+          </p>
         </div>
-        <button onClick={onClose}
-          className="w-6 h-6 rounded-lg flex items-center justify-center text-surface-500 hover:text-white hover:bg-surface-700 transition-all flex-shrink-0">
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => navigate('/replay', { state: { deviceId } })}
+            className="w-7 h-7 rounded-lg bg-surface-700 hover:bg-brand-600 flex items-center justify-center text-surface-300 hover:text-white transition-all"
+            title="Replay">
+            <Play className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onClose}
+            className="w-7 h-7 rounded-lg bg-surface-700 hover:bg-surface-600 flex items-center justify-center text-surface-300 hover:text-white transition-all">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-white/5">
-        {['info','attrs'].map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 py-1.5 text-xs capitalize transition-colors ${
-              tab === t ? 'text-brand-400 border-b-2 border-brand-500' : 'text-surface-500 hover:text-white'
-            }`}>{t === 'info' ? 'Position' : 'Attributes'}</button>
-        ))}
+      {/* Data rows */}
+      <div className="px-4 py-1">
+        <Row icon={Gauge}       label="Speed"     value={fmtSpeed(speed)} color={isMoving ? 'text-moving' : 'text-surface-400'} />
+        <Row icon={Navigation}  label="Course"    value={position?.course != null ? `${position.course}°` : '—'} />
+        <Row icon={MapPin}      label="Position"  value={position ? `${position.latitude?.toFixed(5)}, ${position.longitude?.toFixed(5)}` : '—'} />
+        <Row icon={Clock}       label="Fix Time"  value={fmt(position?.fixTime)} />
+        {attrs.ignition !== undefined && (
+          <Row icon={Zap} label="Ignition" value={attrs.ignition ? 'ON' : 'OFF'} color={attrs.ignition ? 'text-moving' : 'text-stopped'} />
+        )}
+        {attrs.batteryLevel !== undefined && (
+          <Row icon={Battery} label="Battery" value={`${attrs.batteryLevel}%`} color={attrs.batteryLevel < 20 ? 'text-alarm' : 'text-online'} />
+        )}
+        {attrs.temp1 !== undefined && (
+          <Row icon={Thermometer} label="Temperature" value={`${attrs.temp1}°C`} />
+        )}
+        {attrs.alarm && (
+          <Row icon={AlertTriangle} label="Alarm" value={attrs.alarm} color="text-alarm" />
+        )}
       </div>
 
-      {/* Content */}
-      {tab === 'info' && position ? (
-        <div className="p-3 grid grid-cols-2 gap-1.5">
-          <Metric icon={Gauge}      label="Speed"   value={`${Math.round(position.speed || 0)} km/h`} />
-          <Metric icon={Navigation} label="Course"  value={`${position.course || 0}°`} />
-          <Metric icon={MapPin}     label="Lat"     value={position.latitude?.toFixed(5)} />
-          <Metric icon={MapPin}     label="Lng"     value={position.longitude?.toFixed(5)} />
-          {attrs.ignition !== undefined && (
-            <Metric icon={Zap} label="Ignition" value={attrs.ignition ? 'On' : 'Off'}
-              color={attrs.ignition ? 'text-online' : 'text-surface-500'} />
-          )}
-          {attrs.batteryLevel !== undefined && (
-            <Metric icon={Battery} label="Battery" value={`${attrs.batteryLevel}%`}
-              color={attrs.batteryLevel > 30 ? 'text-online' : 'text-alarm'} />
-          )}
+      {/* Address if available */}
+      {position?.address && (
+        <div className="px-4 pb-3">
+          <p className="text-[10px] text-surface-500 flex items-start gap-1">
+            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+            {position.address}
+          </p>
         </div>
-      ) : tab === 'attrs' ? (
-        <div className="p-3 max-h-40 overflow-y-auto space-y-1">
-          {Object.entries(attrs).length === 0
-            ? <p className="text-xs text-surface-600 text-center py-2">No attributes</p>
-            : Object.entries(attrs).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between text-xs">
-                <span className="text-surface-500 capitalize">{k}</span>
-                <span className="text-white font-mono">{String(v)}</span>
-              </div>
-            ))
-          }
-        </div>
-      ) : (
-        <div className="p-3 text-xs text-surface-500 text-center">No position data</div>
       )}
-
-      {/* Footer actions */}
-      <div className="px-3 pb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 text-[10px] text-surface-600">
-          <Clock className="w-3 h-3" />
-          {device.lastUpdate ? dayjs(device.lastUpdate).format('HH:mm:ss') : '—'}
-        </div>
-        <div className="flex gap-1.5">
-          <button onClick={() => navigate(`/replay?deviceId=${deviceId}`)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-[10px] text-surface-300 transition-colors">
-            <RotateCcw className="w-3 h-3" /> Replay
-          </button>
-          <button onClick={() => window.open(`https://www.google.com/maps?q=${position?.latitude},${position?.longitude}`, '_blank')}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-800 hover:bg-surface-700 text-[10px] text-surface-300 transition-colors">
-            <ExternalLink className="w-3 h-3" /> Maps
-          </button>
-        </div>
-      </div>
     </div>
   );
-}
+};
 
-function Metric({ icon: Icon, label, value, color = 'text-white' }) {
-  return (
-    <div className="bg-surface-800/60 rounded-xl px-2.5 py-2">
-      <div className="flex items-center gap-1 mb-0.5">
-        <Icon className="w-3 h-3 text-surface-600" />
-        <span className="text-[9px] text-surface-600 uppercase tracking-wider">{label}</span>
-      </div>
-      <div className={`text-xs font-semibold font-mono ${color}`}>{value ?? '—'}</div>
-    </div>
-  );
-}
+export default StatusCard;

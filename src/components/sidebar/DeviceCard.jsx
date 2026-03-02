@@ -1,77 +1,88 @@
+import { Wifi, WifiOff, Navigation, Square, AlertTriangle, Battery, Zap } from 'lucide-react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
-import { Zap, Wifi, WifiOff, Battery, BatteryLow, AlertTriangle } from 'lucide-react';
-
 dayjs.extend(relativeTime);
 
-const STATUS = {
-  online:  { color: 'bg-online',  text: 'text-online',  label: 'Online'  },
-  moving:  { color: 'bg-moving',  text: 'text-moving',  label: 'Moving'  },
-  stopped: { color: 'bg-stopped', text: 'text-stopped', label: 'Stopped' },
-  offline: { color: 'bg-offline', text: 'text-offline', label: 'Offline' },
-  unknown: { color: 'bg-offline', text: 'text-offline', label: 'Unknown' },
+const fmtSpeed = (knots) => knots != null ? `${(knots * 1.852).toFixed(0)} km/h` : '—';
+const fmtTime  = (iso) => iso ? dayjs(iso).fromNow() : '—';
+
+const CATEGORY_EMOJI = {
+  default: '🚗', arrow: '🚗', bicycle: '🚲', boat: '⛵',
+  bus: '🚌', car: '🚗', crane: '🏗️', helicopter: '🚁',
+  motorcycle: '🏍️', offroad: '🚙', person: '🧍',
+  pickup: '🛻', plane: '✈️', scooter: '🛵', ship: '🚢',
+  tractor: '🚜', train: '🚂', tram: '🚃', trolleybus: '🚎',
+  truck: '🚛', van: '🚐',
 };
 
-const EMOJI = { car:'🚗', van:'🚐', truck:'🚛', motorcycle:'🏍️', boat:'⛵', bicycle:'🚲', default:'📍' };
+const DeviceCard = ({ device, position, isSelected, onClick }) => {
+  const speed    = position?.speed || 0;
+  const isMoving = speed > 0.5;
+  const ignition = position?.attributes?.ignition;
+  const battery  = position?.attributes?.batteryLevel;
+  const alarm    = position?.attributes?.alarm;
 
-export default function DeviceCard({ device, position, selected, onClick }) {
-  const cfg   = STATUS[device.status] || STATUS.unknown;
-  const emoji = EMOJI[device.category] || EMOJI.default;
-  const attrs = position?.attributes || {};
-  const isOnline = device.status !== 'offline' && device.status !== 'unknown';
-  const lastSeen = device.lastUpdate ? dayjs(device.lastUpdate).fromNow() : '—';
-  const isMoving = device.status === 'moving' || (position?.speed > 0);
-  const hasAlarm = attrs.hasOwnProperty('alarm');
+  const status = alarm ? 'alarm'
+    : device.status !== 'online' ? 'offline'
+    : isMoving ? 'moving' : 'stopped';
+
+  const statusConfig = {
+    alarm:   { dot: 'bg-alarm animate-pulse', text: 'text-alarm',   label: 'ALARM',   Icon: AlertTriangle },
+    offline: { dot: 'bg-offline',             text: 'text-offline', label: 'OFFLINE', Icon: WifiOff },
+    moving:  { dot: 'bg-moving animate-pulse', text: 'text-moving', label: 'MOVING',  Icon: Navigation },
+    stopped: { dot: 'bg-stopped',             text: 'text-stopped', label: 'STOPPED', Icon: Square },
+    online:  { dot: 'bg-online',              text: 'text-online',  label: 'ONLINE',  Icon: Wifi },
+  };
+  const cfg  = statusConfig[status] || statusConfig.online;
+  const Icon = cfg.Icon;
+  const emoji = CATEGORY_EMOJI[device.category] || CATEGORY_EMOJI.default;
 
   return (
-    <button onClick={onClick}
-      className={`w-full px-3 py-2.5 flex items-center gap-3 transition-all duration-150 text-left border-l-2 ${
-        selected ? 'bg-brand-600/15 border-brand-500' : 'border-transparent hover:bg-white/4'
-      } ${ hasAlarm ? 'border-alarm bg-alarm/5' : '' }`}
+    <button
+      onClick={onClick}
+      className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-200 group ${
+        isSelected
+          ? 'bg-brand-600/20 border border-brand-500/40 shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+          : 'bg-surface-800/50 border border-white/5 hover:bg-surface-800 hover:border-white/10'
+      }`}
     >
-      {/* Avatar */}
-      <div className={`relative flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center text-base ring-1 ${
-        selected ? 'ring-brand-500/60 bg-brand-600/20' : 'ring-white/10 bg-surface-800'
-      }`}>
-        {emoji}
-        <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-surface-900 ${cfg.color} ${
-          isMoving || device.status === 'online' ? 'animate-pulse' : ''
-        }`} />
-      </div>
+      <div className="flex items-center gap-2.5">
+        {/* Emoji + status dot */}
+        <div className="relative flex-shrink-0">
+          <span className="text-xl leading-none">{emoji}</span>
+          <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-surface-900 ${cfg.dot}`} />
+        </div>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-1">
-          <span className={`text-sm font-medium truncate ${selected ? 'text-brand-300' : 'text-white'}`}>
-            {device.name}
-          </span>
-          {position?.speed > 0 && (
-            <span className="text-[11px] text-moving font-mono flex-shrink-0">{Math.round(position.speed)}<span className="text-surface-600">km/h</span></span>
+        {/* Name + status */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="text-sm font-semibold text-white truncate">{device.name}</span>
+            {alarm && <AlertTriangle className="w-3 h-3 text-alarm flex-shrink-0" />}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-[9px] font-bold tracking-wider ${cfg.text}`}>{cfg.label}</span>
+            {isMoving && (
+              <span className="text-[10px] text-surface-400 font-mono">{fmtSpeed(speed)}</span>
+            )}
+            <span className="text-[10px] text-surface-600 ml-auto">{fmtTime(device.lastUpdate)}</span>
+          </div>
+        </div>
+
+        {/* Right indicators */}
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          {ignition !== undefined && (
+            <Zap className={`w-3 h-3 ${ignition ? 'text-moving' : 'text-surface-600'}`} />
+          )}
+          {battery !== undefined && (
+            <div className="flex items-center gap-0.5">
+              <Battery className={`w-3 h-3 ${battery < 20 ? 'text-alarm' : 'text-surface-500'}`} />
+              <span className="text-[9px] text-surface-500">{battery}%</span>
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className={`text-[11px] font-medium ${cfg.text}`}>{cfg.label}</span>
-          <span className="text-surface-700">·</span>
-          <span className="text-[11px] text-surface-500 truncate">{isOnline ? 'Just now' : lastSeen}</span>
-        </div>
-      </div>
-
-      {/* Indicator icons */}
-      <div className="flex flex-col gap-1 flex-shrink-0 items-center">
-        {hasAlarm && <AlertTriangle className="w-3.5 h-3.5 text-alarm" />}
-        {attrs.ignition !== undefined && (
-          <Zap className={`w-3.5 h-3.5 ${attrs.ignition ? 'text-online' : 'text-surface-700'}`} />
-        )}
-        {attrs.batteryLevel !== undefined && (
-          attrs.batteryLevel > 30
-            ? <Battery className="w-3.5 h-3.5 text-online" />
-            : <BatteryLow className="w-3.5 h-3.5 text-alarm" />
-        )}
-        {isOnline
-          ? <Wifi className="w-3 h-3 text-surface-600" />
-          : <WifiOff className="w-3 h-3 text-surface-800" />
-        }
       </div>
     </button>
   );
-}
+};
+
+export default DeviceCard;

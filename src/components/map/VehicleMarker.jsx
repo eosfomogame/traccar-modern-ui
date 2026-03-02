@@ -1,99 +1,82 @@
-const SVG = {
-  car: `<path d="M17.5 10.5l-1.5-4.5H4l-1.5 4.5M2 10.5v3a1 1 0 001 1h1a1.5 1.5 0 003 0h6a1.5 1.5 0 003 0h1a1 1 0 001-1v-3H2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
-  van: `<rect x="2" y="7" width="16" height="10" rx="1.5" stroke-width="1.5"/><path d="M2 11h16M6 17a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM14 17a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" stroke-width="1.5"/>`,
-  truck: `<rect x="1" y="6" width="13" height="11" rx="1" stroke-width="1.5"/><path d="M14 9h4l2 4v4h-6V9zM5 17a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17 17a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" stroke-width="1.5"/>`,
-  motorcycle: `<circle cx="5" cy="14" r="3" stroke-width="1.5"/><circle cx="17" cy="14" r="3" stroke-width="1.5"/><path d="M5 14h5l2-6h3l2 6" stroke-width="1.5" stroke-linecap="round"/>`,
-  boat: `<path d="M3 16s1-1 4-1 5 2 8 2 4-1 4-1V11L12 3 3 11v5z" stroke-width="1.5" stroke-linejoin="round"/>`,
-  default: `<circle cx="10" cy="10" r="6" stroke-width="1.5"/><circle cx="10" cy="10" r="2" fill="currentColor"/>`,
+// Returns a DOM element for use with MapLibre Marker
+const VehicleMarker = ({ position, isSelected, onClick }) => {
+  const el = document.createElement('div');
+  el.className = 'vehicle-marker';
+  el.style.cssText = `
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    position: relative;
+    transform: rotate(${position.course || 0}deg);
+    transition: transform 0.8s ease-out;
+  `;
+
+  const speed   = position.speed || 0;
+  const isMoving = speed > 0.5;
+  const status   = position.attributes?.ignition === false ? 'stopped'
+    : isMoving ? 'moving' : 'stopped';
+
+  const colorMap = {
+    moving:  { fill: '#3b82f6', ring: '#3b82f621', glow: '#3b82f640' },
+    stopped: { fill: '#f59e0b', ring: '#f59e0b21', glow: '#f59e0b40' },
+    alarm:   { fill: '#ef4444', ring: '#ef444421', glow: '#ef444440' },
+  };
+  const c = colorMap[status] || colorMap.stopped;
+
+  // Pulse ring (only when moving)
+  if (isMoving || isSelected) {
+    const ring = document.createElement('div');
+    ring.style.cssText = `
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid ${isSelected ? '#3b82f6' : c.fill};
+      opacity: 0.6;
+      animation: ping 1.5s cubic-bezier(0,0,0.2,1) infinite;
+      pointer-events: none;
+    `;
+    el.appendChild(ring);
+  }
+
+  // Main body — arrow shape
+  el.innerHTML += `
+    <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"
+      style="position:absolute;inset:0;filter:${isSelected ? `drop-shadow(0 0 6px ${c.fill})` : 'none'};transition:filter 0.3s;">
+      <!-- Shadow circle -->
+      <circle cx="18" cy="18" r="16" fill="${c.glow}" />
+      <!-- Body circle -->
+      <circle cx="18" cy="18" r="12" fill="${c.fill}" />
+      <!-- Arrow pointing up (direction of travel) -->
+      <path d="M18 9 L23 23 L18 20 L13 23 Z" fill="white" opacity="0.9" />
+    </svg>
+  `;
+
+  // Speed label (below marker, not rotated)
+  if (isMoving) {
+    const label = document.createElement('div');
+    label.style.cssText = `
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%) rotate(${-(position.course || 0)}deg);
+      margin-top: 2px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      font-size: 9px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      font-family: monospace;
+    `;
+    label.textContent = `${(speed * 1.852).toFixed(0)} km/h`;
+    el.appendChild(label);
+  }
+
+  el.addEventListener('click', (e) => { e.stopPropagation(); onClick?.(); });
+
+  return el;
 };
 
-export default function VehicleMarker({ device, position, selected, color, onClick }) {
-  const course  = position?.course ?? 0;
-  const isMoving = device.status === 'moving' || (position?.speed > 0);
-  const path    = SVG[device.category] || SVG.default;
-  const size    = selected ? 44 : 36;
-  const iconSize = selected ? 22 : 18;
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        transform: `rotate(${course}deg)`,
-        transition: 'transform 1.2s cubic-bezier(0.4,0,0.2,1)',
-        position: 'relative',
-        width: size + 16,
-        height: size + 16,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-      }}
-    >
-      {/* Pulse ring for moving */}
-      {isMoving && (
-        <div style={{
-          position: 'absolute',
-          width: size + 16,
-          height: size + 16,
-          borderRadius: '50%',
-          backgroundColor: color,
-          opacity: 0.25,
-          animation: 'ping 1.8s cubic-bezier(0,0,0.2,1) infinite',
-        }} />
-      )}
-
-      {/* Selection ring */}
-      {selected && (
-        <div style={{
-          position: 'absolute',
-          width: size + 12,
-          height: size + 12,
-          borderRadius: '50%',
-          border: '2px solid #60a5fa',
-          animation: 'pulse 2s ease-in-out infinite',
-        }} />
-      )}
-
-      {/* Main circle */}
-      <div style={{
-        width: size,
-        height: size,
-        borderRadius: '50%',
-        backgroundColor: color + '22',
-        border: `2px solid ${color}`,
-        boxShadow: `0 2px 12px ${color}55, ${selected ? `0 0 20px ${color}44` : ''}`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'all 0.2s ease',
-      }}>
-        <svg viewBox="0 0 20 20" fill="none" stroke={color}
-          style={{ width: iconSize, height: iconSize }}
-          dangerouslySetInnerHTML={{ __html: path }}
-        />
-      </div>
-
-      {/* Speed badge (counter-rotated so it stays readable) */}
-      {isMoving && position?.speed > 0 && (
-        <div style={{
-          position: 'absolute',
-          bottom: -2,
-          left: '50%',
-          transform: `translateX(-50%) rotate(-${course}deg)`,
-          fontSize: 9,
-          fontFamily: 'monospace',
-          fontWeight: 700,
-          color,
-          background: color + '22',
-          border: `1px solid ${color}44`,
-          borderRadius: 4,
-          padding: '1px 4px',
-          whiteSpace: 'nowrap',
-          lineHeight: 1.4,
-        }}>
-          {Math.round(position.speed)} km/h
-        </div>
-      )}
-    </div>
-  );
-}
+export default VehicleMarker;

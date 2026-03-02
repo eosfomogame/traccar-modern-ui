@@ -4,8 +4,16 @@ const { reducer, actions } = createSlice({
   name: 'events',
   initialState: { items: [] },
   reducers: {
-    add(state, action)   { state.items.unshift(...action.payload); },
-    clear(state)         { state.items = []; },
+    add(state, action) {
+      state.items.unshift(...action.payload);
+      state.items.splice(50);
+    },
+    delete(state, action) {
+      state.items = state.items.filter((item) => item.id !== action.payload.id);
+    },
+    deleteAll(state) {
+      state.items = [];
+    },
   },
 });
 
